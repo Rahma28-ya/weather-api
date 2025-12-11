@@ -82,13 +82,13 @@ def predict_api():
         X_selected = selector.transform(selector_input.values)
 
         preds = model.predict(X_selected)
-        avg_pred = float(np.mean(preds))
+avg_pred = float(np.mean(preds))
 
-         return {
-            "status": "success",
-            "prediksi_rata_rata_suhu": avg_pred,
-            "sample_data": df.head(3).to_dict(orient="records")
-        }
+return {
+    "status": "success",
+    "prediksi_rata_rata_suhu": avg_pred,
+    "sample_data": df.head(3).to_dict(orient="records")
+}
     except Exception as e:
         return {"error": str(e)}
 
@@ -107,4 +107,5 @@ with gr.Blocks() as ui:
 
 # Mount Gradio ke FastAPI
 app = gr.mount_gradio_app(app, ui, path="/app")
+
 
