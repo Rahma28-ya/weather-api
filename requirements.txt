@@ -5,5 +5,4 @@ pandas
 scikit-learn==1.6.1
 joblib
 requests
-gradio==6.1.0
-pydantic
+gradio
