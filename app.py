@@ -10,10 +10,9 @@ import os
 app = FastAPI()
 
 # ===== CORS =====
-origins = ["*"]  # Bisa diganti dengan URL frontend temanmu
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # bisa diganti URL frontend temanmu
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,30 +23,15 @@ app.add_middleware(
 def home():
     return {"message": "Weather App API is running"}
 
-# ===== DOWNLOAD MODEL =====
-def download_file(url, filename):
-    if not os.path.exists(filename):
-        r = requests.get(url)
-        with open(filename, "wb") as f:
-            f.write(r.content)
-
-download_file("https://huggingface.co/rahma28/weather-api/resolve/main/model.pkl", "model.pkl")
-download_file("https://huggingface.co/rahma28/weather-api/resolve/main/scaler.pkl", "scaler.pkl")
-download_file("https://huggingface.co/rahma28/weather-api/resolve/main/selector.pkl", "selector.pkl")
-
 # ===== LOAD MODEL =====
 model = joblib.load("model.pkl")
 scaler = joblib.load("scaler.pkl")
 selector = joblib.load("selector.pkl")
 
-print("Scaler expects:", scaler.feature_names_in_)
-print("Selector expects:", selector.feature_names_in_)
-
 # ===== PREDICT API =====
 @app.get("/predict")
 def predict_api():
     try:
-        # ===== Ambil data cuaca =====
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": -4.087,
@@ -61,11 +45,10 @@ def predict_api():
 
         response = requests.get(url, params=params).json()
         if "hourly" not in response:
-            return {"error": "Hourly data missing", "response": response}
+            return {"error": "Hourly data missing"}
 
         hourly = response["hourly"]
 
-        # ===== Build DataFrame lengkap =====
         data_dict = {
             "temperature": hourly.get("temperature_2m", [0]*24),
             "relative_humidity": hourly.get("relativehumidity_2m", [0]*24),
@@ -87,16 +70,15 @@ def predict_api():
 
         df = pd.DataFrame(data_dict)
 
-        # ===== Pastikan semua kolom ada & urutannya sesuai scaler =====
+        # Pastikan urutan kolom sesuai scaler
         for col in scaler.feature_names_in_:
             if col not in df.columns:
                 df[col] = 0
         df = df[scaler.feature_names_in_]
 
-        # ===== Transform & Select Features =====
         X_scaled = scaler.transform(df)
         selector_input = pd.DataFrame(X_scaled, columns=scaler.feature_names_in_)
-        selector_input = selector_input[selector.feature_names_in_]  # hanya 15 kolom
+        selector_input = selector_input[selector.feature_names_in_]
         X_selected = selector.transform(selector_input.values)
 
         preds = model.predict(X_selected)
@@ -107,28 +89,18 @@ def predict_api():
     except Exception as e:
         return {"error": str(e)}
 
-# ===== FRONTEND GRADIO =====
+# ===== GRADIO FRONTEND =====
 def get_prediction():
-    try:
-        url = "http://localhost:8000/predict"  # ganti jika deploy
-        r = requests.get(url)
-        if r.status_code != 200:
-            return f"Error: API mengembalikan status {r.status_code}"
-        return r.json()
-    except Exception as e:
-        return f"Error: {e}"
+    r = requests.get("http://localhost:8000/predict")  # Railway nanti ganti domain
+    if r.status_code == 200:
+        return str(r.json())
+    return f"Error: {r.status_code}"
 
-with gr.Blocks(title="🌤 Weather Prediction App") as ui:
-    gr.Markdown("""
-        <h1 style='text-align:center; font-size:36px;'>🌤 Weather Prediction App</h1>
-        <p style='text-align:center; font-size:18px; color:#555;'>
-            Mengambil prediksi cuaca terbaru menggunakan Machine Learning dan API Open-Meteo.
-        </p>
-    """)
-    with gr.Row():
-        output = gr.Textbox(label="Hasil Prediksi Suhu", lines=4)
+with gr.Blocks() as ui:
+    gr.Markdown("<h1 style='text-align:center;'>🌤 Weather Prediction App</h1>")
+    output = gr.Textbox(label="Hasil Prediksi Suhu", lines=4)
     btn = gr.Button("Ambil Prediksi Cuaca")
     btn.click(fn=get_prediction, outputs=output)
 
-# ===== Mount Gradio ke FastAPI =====
+# Mount Gradio ke FastAPI
 app = gr.mount_gradio_app(app, ui, path="/app")
